@@ -52,7 +52,7 @@ done
 queueLength=$overallLength
 # read number of running machines, compute reslt
 
-numberOfSpotMachines=`python $SCRIPTS_DIR/getNumberOfMachinesNamed.py $MASTER_ASG` || {
+numberOfSpotMachines=`python $SCRIPTS_DIR/getNumberOfMachinesNamed.py $ASG` || {
   msg="Failed to obtain number of EC2 spot instances: $numberOfSpotMachines"
   echo "$msg" >> $logFile
   sns-publish-coursera --message "$msg" --subject "Coursera: Could not read number of spot instances"
