@@ -4,7 +4,8 @@
 . /etc/environment
 . $HOME/.bashrc
 
-source `dirname $0`/as-base.sh
+SCRIPTS_DIR=`dirname $0`
+source $SCRIPTS_DIR/as-base.sh
 
 if [ ! -e $settingsDir ]; then
   sudo shutdown -r now
@@ -51,13 +52,13 @@ done
 queueLength=$overallLength
 # read number of running machines, compute reslt
 
-numberOfSpotMachines=`python getNumberOfMachinesNamed.py $MASTER_ASG` || {
+numberOfSpotMachines=`python $SCRIPTS_DIR/getNumberOfMachinesNamed.py $MASTER_ASG` || {
   msg="Failed to obtain number of EC2 spot instances: $numberOfSpotMachines"
   echo "$msg" >> $logFile
   sns-publish-coursera --message "$msg" --subject "Coursera: Could not read number of spot instances"
   exit 1
 }
-numberOfBackupMachines=`python getNumberOfMachinesNamed.py $BACKUP_ASG` || {
+numberOfBackupMachines=`python $SCRIPTS_DIR/getNumberOfMachinesNamed.py $BACKUP_ASG` || {
   msg="Failed to obtain number of EC2 backup instances: $numberOfBackupMachines"
   echo "$msg" >> $logFile
   sns-publish-coursera --message "$msg" --subject "Coursera: Could not read number of backup instances"

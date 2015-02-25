@@ -91,7 +91,7 @@ Note that S3 does not have the concept of directories built-in, so s3fs uses som
 Also note that S3 is eventually consistent.
 
 ### Directory Structure
-Each organization can have multiple clusters running and the name of the cluster is stored in the file `$GRADING_HOME/clusterName`. All other paths are relative to the cluster name in the `s3data`, i.e., `s3Dir=$GRADING_HOME/s3data/\`cat clusterName\``. Relative to the `s3dir` the folder structure is the following:
+Each organization can have multiple clusters running and the name of the cluster is stored in the file `$GRADING_HOME/clusterName`. All other paths are relative to the cluster name in the `s3data`, i.e., ``s3Dir=$GRADING_HOME/s3data/`cat clusterName```. Relative to the `s3dir` the folder structure is the following:
 
 * `logs` contains log files for individual workers: one log file for every graded submission, a log file of the alive-checker cron job, and a log file of the startup script.
 * The logs of the master are not copied to S3 - log in to the master using SSH and check the `~/log` directory.
@@ -100,8 +100,14 @@ Each organization can have multiple clusters running and the name of the cluster
   * `rebootGeneration`: increasing the value in this file will make all workers reboot.
   * `workersPerMachine`: number of instances of the grading script on each worker machine.
   * `gradingTimeEstimate`: estimated time to grade one submission, used by the master to compute the WaitingTime measure (see above)
+  * `debuggingEnabled`: if not workers will provide detailed logs of the grading process.
+  * `masterImage`: image id of the master (AWS image). If you change the image the master scaling group needs a restart (`as-restart-master.sh`).
+  * `workerImage`: image id of workers (AWS image). If you change the image the worker scaling groups needs a restart (`as-restart-workers.sh`).
+  * `masterType`: type of the AWS instance to use for master (e.g., t1.micro). If you change the image the master scaling group needs a restart (`as-restart-master.sh`).
+  * `workerType`: type of the AWS instance to use for workers in the main scaling group (e.g., c3.large). If you change the image the worker scaling groups needs a restart (`as-restart-workers.sh`).
+  * `workerType2`: type of the backup worker. Should be different than `workerType`. Used for a backup scaling group. If you change the image the worker scaling groups needs a restart (`as-restart-workers.sh`).
 * `courses` contains a folder for each course that the cluster is grading. For example (`parprog` and `progfun`). Furthermore, each course folder contains a file:
     * `apiKey`: required to access coursera API. **Careful**: this setting needs to be changed in multiple locations, see scripts in `heathermiller/progfun`.
     * `courseId`, `queueName` of the coursera class. Again, changes in the progfun repository are required.
     * `gitUrl` the url pointing to the repo. The username and password can be stored in the URL. 
-    * `gitBranch` the branch used for deployment. 
+    * `gitBranch` the branch used for deployment.
