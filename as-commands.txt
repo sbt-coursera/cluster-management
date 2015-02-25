@@ -1,0 +1,86 @@
+# query
+
+as-describe-auto-scaling-groups
+as-describe-auto-scaling-instances
+as-describe-launch-configs
+as-describe-policies
+
+
+mon-describe-alarms
+mon-list-metrics --namespace coursera
+
+mon-get-stats WaitingTime --namespace coursera --statistics Average --period 60
+
+
+
+# delete
+
+as-delete-auto-scaling-group courseraASG --force-delete
+# With --force-delete the group is also deleted when there are running instances. Those are terminated.
+
+as-delete-launch-config courseraLC
+
+# policies are deleted together with the auto-scaling group
+# alarms are deleted together with the auto-scaling group
+
+# (metrics cannot be deleted - they will disappear if they are not updated in 2 weeks or so)
+
+
+
+
+
+
+# Auto scaling group for the master: require one running instance, ressurect it if it dies.
+
+as-create-launch-config courseraMasterLC --image-id ami-a045dcc9 --instance-type t1.micro --key coursera
+
+as-create-auto-scaling-group courseraMasterASG --launch-configuration courseraMasterLC --availability-zones us-east-1a,us-east-1b,us-east-1c,us-east-1d --min-size 1 --max-size 1 --default-cooldown 60
+
+
+
+
+
+# Auto scaling group using spot instances
+
+as-create-launch-config courseraLC --image-id ami-fa9b2493 --instance-type m1.large --spot-price 0.160 --key coursera
+
+as-create-auto-scaling-group courseraASG --launch-configuration courseraLC --availability-zones us-east-1a,us-east-1b,us-east-1c,us-east-1d --min-size 1 --max-size 30 --default-cooldown 300
+
+as-put-scaling-policy courseraScaleUpPolicy --auto-scaling-group courseraASG --adjustment 2 --type ChangeInCapacity --cooldown 420
+# >> returns an identifier (##scaleUpPolicyARN##)
+
+as-put-scaling-policy courseraScaleDownPolicy --auto-scaling-group courseraASG --adjustment=-1 --type ChangeInCapacity --cooldown 120
+# >> returns an identifier (##scaleDownPolicyARN##)
+
+# Trigger 1 - Utilization
+mon-put-metric-alarm --alarm-name courseraUtilizationScaleUpAlarm --namespace "AWS/EC2" --metric-name CPUUtilization --dimensions "AutoScalingGroupName=courseraASG" --statistic Average --period 60 --threshold 90 --comparison-operator GreaterThanThreshold --evaluation-periods 2 --unit Percent --alarm-actions ##scaleUpPolicyARN##
+
+mon-put-metric-alarm --alarm-name courseraUtilizationScaleDownAlarm --namespace "AWS/EC2" --metric-name CPUUtilization --dimensions "AutoScalingGroupName=courseraASG" --statistic Average --period 60 --threshold 70 --comparison-operator LessThanThreshold --evaluation-periods 2 --unit Percent --alarm-actions  ##scaleDownPolicyARN##
+
+# Trigger 2 - Waiting Time
+mon-put-metric-alarm --alarm-name courseraScaleUpAlarm --namespace coursera --metric-name WaitingTime --statistic Average --period 60 --threshold 100 --comparison-operator GreaterThanThreshold --evaluation-periods 1 --alarm-actions ##scaleUpPolicyARN## 
+
+# Do not need this one when there is the utilization alarm 
+#mon-put-metric-alarm --alarm-name courseraScaleDownAlarm --namespace coursera --metric-name WaitingTime --statistic Average --period 60 --threshold 1 --comparison-operator LessThanThreshold --evaluation-periods 1 --alarm-actions ##scaleDownPolicyARN## 
+
+
+
+
+
+# Backup auto scaling group using normal instances
+
+as-create-launch-config courseraBackupLC --image-id ami-a045dcc9 --instance-type m1.large --key coursera
+
+as-create-auto-scaling-group courseraBackupASG --launch-configuration courseraBackupLC --availability-zones us-east-1a,us-east-1b,us-east-1c,us-east-1d --min-size 0 --max-size 20 --default-cooldown 300
+
+as-put-scaling-policy courseraBackupScaleUpPolicy --auto-scaling-group courseraBackupASG --adjustment 3 --type ChangeInCapacity --cooldown 420
+# >> returns an identifier (##scaleUpPolicyARN##)
+
+as-put-scaling-policy courseraBackupScaleDownPolicy --auto-scaling-group courseraBackupASG --adjustment=-1 --type ChangeInCapacity --cooldown 120
+# >> returns an identifier (##scaleDownPolicyARN##)
+
+# This metric should fire if the WaitingTime goes above one hour. This is for backup purposes so one hour should not be the problem. Also, this alarm triggers only after 5 minutes of long waiting time. We do not want peaks to cause spawning of expensive machines.
+mon-put-metric-alarm --alarm-name courseraBackupScaleUpAlarm --namespace coursera --metric-name WaitingTime --statistic Average --period 60 --threshold 600 --comparison-operator GreaterThanThreshold --evaluation-periods 2 --alarm-actions ##scaleUpPolicyARN##
+
+mon-put-metric-alarm --alarm-name courseraBackupScaleDownAlarm --namespace coursera --metric-name WaitingTime --statistic Average --period 60 --threshold 100 --comparison-operator LessThanThreshold --evaluation-periods 1 --alarm-actions ##scaleDownPolicyARN##
+

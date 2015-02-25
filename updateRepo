@@ -1,0 +1,12 @@
+#!/bin/bash
+
+scriptsDir="$( cd "$( dirname "$0" )" && pwd )"
+cd $scriptsDir
+
+git fetch -f origin || {
+  hostname=`curl http://169.254.169.254/latest/meta-data/public-hostname`
+  sns-publish-coursera --message "git fetch for scripts repository failed on $hostname. Rebooting the machine..." --subject "Coursera: git fetch failed for scripts repo"
+  sudo shutdown -r now
+  exit 1
+}
+git reset --hard origin/deploy

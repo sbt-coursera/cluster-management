@@ -1,0 +1,37 @@
+#!/bin/bash -x
+
+# when running through crontab, /etc/environment and .bashrc are not executed
+. /etc/environment
+. $HOME/.bashrc
+
+source `dirname $0`/as-base.sh
+cd `dirname $0`
+
+hostname=`curl http://169.254.169.254/latest/meta-data/public-hostname`
+stateFilesDir=$s3dir/workerStates/$hostname
+localStateFilesDir=$GRADING_HOME/logs/stateFiles
+mkdir -p $localStateFilesDir
+logFile=$GRADING_HOME/logs/liveChecker.log
+
+
+# will be 0 if the directory is empty, and also if it doesn't exist
+nbRunning=`ls -A $stateFilesDir | wc -l`
+
+date >> $logFile
+
+if [[ $nbRunning == 0 ]]; then
+  echo "no slaves running" >> $logFile
+else
+  if diff $localStateFilesDir $stateFilesDir; then
+    echo "worker state files did not change, rebooting" >> $logFile
+    sns-publish-coursera --message "Re-starting worker $hostname, worker state files are unchanged." --subject "Coursera: Worker is hanging"
+    sudo shutdown -r now
+  else
+    echo "workers are still active on $hostname" >> $logFile
+    rm $localStateFilesDir/*
+    cp $stateFilesDir/* $localStateFilesDir
+  fi
+fi
+
+# directory is created by startWorkerImpl
+cp $logFile $s3dir/logs/$hostname/

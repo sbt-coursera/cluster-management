@@ -1,0 +1,58 @@
+#!/bin/bash
+source `dirname $0`/as-base.sh
+logFile=$GRADING_HOME/logs/startWorker.log
+currentDir=`pwd`
+hostname=`curl http://169.254.169.254/latest/meta-data/public-hostname`
+
+if [[ ! -e $s3dir/settings ]]; then
+  date >> $logFile
+  echo "failed to mount s3 bucket" >> $logFile
+  sns-publish-coursera --message "Worker failed to mount s3 data directory: $hostname. Check log file $logFile" --subject "Coursera: Worker Startup Failure"
+else
+  numWorkers=`cat $s3dir/settings/workersPerMachine`
+
+  date >> $logFile
+  echo "starting $numWorkers workers" >> $logFile
+
+  rm -rf $s3dir/workerStates/$hostname
+
+  # clone the repositories for each course and core
+  courses=$(find $s3dir/courses -mindepth 1 -maxdepth 1 -type d -printf '%f\n')
+  for i in `seq 1 $numWorkers`; do
+    for course in `find $s3dir/courses -mindepth 1 -maxdepth 1 -type d -printf '%f\n'`; do
+      gitBranch=`cat $s3dir/courses/$course/gitBranch`
+      if [[ -e $course$i ]] ; then
+        echo "Refreshing $course$i..."
+        cd $course$i
+        git fetch -f origin || {
+          sns-publish-coursera --message "git fetch for $course$i repository failed on $hostname. Rebooting the machine..." --subject "Coursera: git fetch failed for $course$i repo"
+          sudo shutdown -r now
+          exit 1
+        }
+        git clean -f
+        git reset --hard HEAD
+        git pull origin $gitBranch
+
+        cd $currentDir
+      else
+        echo "Downloading $course$i..."
+        echo `cat $s3dir/courses/$course/gitUrl`
+        git clone `cat $s3dir/courses/$course/gitUrl` "$course$i" || {
+          sudo shutdown -r now
+          exit 1
+        }
+        cd $course$i
+        git fetch -f origin $gitBranch
+        git checkout $gitBranch
+        cd $currentDir
+      fi
+    done
+  done
+
+  for i in `seq 1 $numWorkers`; do
+    $GRADING_HOME/scripts/startGrading $i &
+  done
+fi
+
+mkdir -p $s3dir/logs/$hostname
+cp $logFile $s3dir/logs/$hostname/

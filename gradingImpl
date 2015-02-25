@@ -1,0 +1,192 @@
+#!/bin/bash -x
+SETTINGS_DIR=`dirname $0`
+source $SETTINGS_DIR/as-base.sh
+worker=$1
+
+# Dependencies
+##############
+
+# Spidermonkey (js execution for jsawk)
+#  apt-get install spidermonkey-bin
+#  brew install spidermonkey
+
+# Coreutils for base64, stat, cut
+#  brew install coreutils
+
+# git
+# curl
+## Settings ##
+isEmptyPathTest="this.submission==null"
+partIdStringPath="this.submission.submission_metadata.assignment_part_sid"
+messageTimePath="this.submission.submission_metadata.submission_time"
+# submissionDataPath="this.submission.submission"
+# submissionJarFileName="$submissionDir/submittedSrc.jar"
+
+logsUploadDir="$s3dir/logs"
+workerStatesDir="$s3dir/workerStates"
+rebootGenerationFile="$s3dir/settings/rebootGeneration"
+debuggingEnabledFile="$s3dir/settings/debuggingEnabled"
+
+sbtMem=2048
+
+queueEmptySleep=15
+
+if [[ -e $logsUploadDir ]]; then
+  s3avail="true"
+
+  # Public hostname of this ec2 instance, doc see
+  # http://docs.amazonwebservices.com/AWSEC2/latest/UserGuide/AESDG-chapter-instancedata.html
+  hostname=`curl http://169.254.169.254/latest/meta-data/public-hostname`
+
+  mkdir -p $logsUploadDir/$hostname
+  # delete existing process files - might also delete process files of other workers running
+  # on the same machine, but that's OK, they will re-appear.
+  rm -rf $workerStatesDir/$hostname/*
+  mkdir -p $workerStatesDir/$hostname
+
+  rebootGeneration=`cat $rebootGenerationFile`
+  debuggingEnabled=`cat $debuggingEnabledFile`
+fi
+
+## Functions ##
+
+uploadLog () {
+  if [[ $s3avail == "true" ]]; then
+    cp $1 $logsUploadDir/$hostname
+  fi
+}
+
+sendEmail () {
+  if [[ $s3avail == "true" ]]; then
+    sns-publish-coursera --message "$1" --subject "$2"
+  fi
+}
+
+baseURL () {
+    echo "https://class.coursera.org/$1"
+}
+
+# takes a courseId as argument and returns the corresponding coursera queue url
+getQueueUrl() {
+  base=$(baseURL $1 $2)
+  echo "$base/assignment/api/pending_submission"
+}
+
+## Initializaiton ##
+declare -A coursesData
+declare -A courses
+for course in `find $s3dir/courses -mindepth 1 -maxdepth 1 -type d -printf '%f\n'`; do
+  cc=$s3dir/courses/$course
+  courses[$course]=$course
+  coursesData[$course:courseId]=`cat $cc/courseId`
+  coursesData[$course:queueName]=`cat $cc/queueName`
+  coursesData[$course:apiKey]=`cat $cc/apiKey`
+  coursesData[$course:gitBranch]=`cat $cc/gitBranch`
+done
+
+ownPid="p$BASHPID"
+
+if [[ $s3avail == "true" ]]; then
+  workerStateFile=$workerStatesDir/$hostname/$ownPid
+else
+  workerStateFile=$progfunDir/workerState
+fi
+
+# On OS X with homebrew, the gnu base64 is called gbase64 - the
+# plain base64 has different parameters..
+if brew list coreutils; then
+  base64cmd="gbase64"
+  sortCmd="gsort"
+else
+  base64cmd="base64"
+  sortCmd="sort"
+fi
+
+## Main Loop ##
+while [ -z "`cat -u $GRADING_HOME/terminate`" ]; do
+  dateString=`date "+%Y-%m-%d-%H-%M-%S"`
+  logFileName=logs/$ownPid-$dateString.log
+  for course in ${courses[@]}; do
+    cd $course$worker
+    # Fetch the latest branch every time.
+    git clean -f
+    git reset --hard HEAD
+    git pull origin ${coursesData[$course:gitBranch]}
+
+    submissionDir="$GRADING_HOME/$course$worker/submission"
+    submissionJsonFileName="$submissionDir/submission.json"
+
+    mkdir -p $submissionDir
+    mkdir -p logs
+
+    # Reboot if required
+    if [[ $s3avail == "true" && $rebootGeneration != `cat $rebootGenerationFile` ]]; then
+      sudo shutdown -r now
+    fi
+
+    courseId=${coursesData[$course:courseId]}
+    queueName=${coursesData[$course:queueName]}
+    apiKey=${coursesData[$course:apiKey]}
+    queueUrl=$(getQueueUrl $courseId $courseNb)
+    uuid=$(uuidgen)
+
+    # set the apiKey for grading
+    echo "checking queue of $courseId"
+    echo "queue name: $queueName"
+    echo "queue url : $queueUrl"
+
+    rm -f $submissionJsonFileName
+    curl -o $submissionJsonFileName --header "X-api-key: $apiKey" --form "queue=$queueName" $queueUrl 2>&1 | tee -a $logFileName
+
+    echo "Json Data" >> $logFileName
+    cat $submissionJsonFileName | tee -a $logFileName
+    echo
+
+    if [[ ! -e $submissionJsonFileName || ! `cat $submissionJsonFileName | $SETTINGS_DIR/jsawk` ]] ; then
+      i=$nbCourses # don't try to read the queues of other courses in this iteration
+      echo "Failed to read from Queue, json file:" | tee -a $logFileName
+      echo "$counter,-2" > $workerStateFile
+      sendEmail "Non-JSON result when reading queue, check $logFileName of worker $hostname" "Coursera: Worker failed to read from Queue"
+      uploadLog $logFileName
+      sleep $queueEmptySleep
+
+    elif [[ `cat $submissionJsonFileName | $SETTINGS_DIR/jsawk "return $isEmptyPathTest"` == "true" ]]; then
+      echo "Queue was empty"
+      echo "$counter,-1" > $workerStateFile
+      # don't upload the log
+      if [[ $i == $nbCourses ]]; then
+        # all queues were empty, so we sleep
+        sleep $queueEmptySleep
+      fi
+
+    else
+      partIdString=`cat $submissionJsonFileName | $SETTINGS_DIR/jsawk "return $partIdStringPath"`
+      echo "Part ID String: $partIdString" | tee -a $logFileName
+
+      messageTime=`cat $submissionJsonFileName | $SETTINGS_DIR/jsawk "return $messageTimePath"`
+      currentTime=`date "+%s"`
+      messageAge=$(($currentTime - $messageTime))
+      echo "Message age in seconds: $messageAge"
+
+      echo "$counter,$messageAge" > $workerStateFile
+
+      (sbt -mem $sbtMem -J-Xss2m -no-colors "set (partIdOfGradingProject in submissionProject) := \"$partIdString\"" "set (gradingCourseId in submissionProject) := \"$courseId\"" "set (gradingUUID in submissionProject) := \"$uuid\"" "set (apiKey in submissionProject) := \"$apiKey\"" submission/grade 2>&1 || {
+        echo "sbt exited with a non-zero exit code"
+      }) | tee -a $logFileName
+      if [ -n "$debuggingEnabled" ]; then cat submission/target/streams/\$global/grade/\$global/out | grep debug | tee -a $logFileName; fi
+      uploadLog $logFileName
+
+      if grep "Unknown assignment part id" $logFileName; then
+        sendEmail "Correction aborted because part id number is invalid. Hostname: $hostname, log file: $logFileName" "Coursera: Invalid part id while grading"
+      elif grep "FAILURES WHILE DOWNLOADING OR EXTRACTING THE SUBMISSION" $logFileName; then
+        sendEmail "Error while extracting the sumbission sources. Hostname: $hostname, log file: $logFileName" "Coursera: Error extracting submission sources"
+      elif grep "Error occured while running the ScalaTest command" $logFileName; then
+        sendEmail "Error while running tests on submission. Hostname: $hostname, log file: $logFileName" "Coursera: Error running tests on submission"
+      elif grep "Could not submit feedback" $logFileName; then
+        sendEmail "Failed to upload grading feedback. Hostname: $hostname, log file: $logFileName" "Coursera: Failed to upload a grading feedback"
+      fi
+    fi
+
+    cd ../
+  done
+done

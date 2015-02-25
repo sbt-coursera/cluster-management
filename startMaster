@@ -1,0 +1,5 @@
+#!/bin/bash
+`dirname $0`/updateRepo
+source `dirname $0`/as-base.sh
+
+`dirname $0`/startMasterImpl

@@ -1,0 +1,95 @@
+#!/bin/bash -x
+
+# when running through crontab, /etc/environment and .bashrc are not executed
+. /etc/environment
+. $HOME/.bashrc
+
+source `dirname $0`/as-base.sh
+
+if [ ! -e $settingsDir ]; then
+  sudo shutdown -r now
+fi
+
+logFile=$HOME/log/update-metric.log
+logFileInline=$HOME/log/update-metric
+echo "---------------------------------------------------------------------------------" >> $logFile
+date >> $logFile
+
+gradingTimeEstimate=`cat $settingsDir/gradingTimeEstimate`
+workersPerMachine=`cat $settingsDir/workersPerMachine`
+
+overallLength=$((0))
+
+for course in `ls $coursesDir`; do
+  # When changing this file one should also change the courseId in build.sbt for assignmetns.
+  # If there are two courses running (EPFL and public) this value should correspond to the public course.
+  courseId=`cat $coursesDir/$course/courseId`
+  queueName=`cat $coursesDir/$course/queueName`
+  apiKey=`cat $coursesDir/$course/apiKey`
+
+
+  # read queue length
+
+  json=`curl --header "X-api-key: $apiKey" https://class.coursera.org/$courseId/assignment/api/queue_length?queue=$queueName`
+  if ! echo "$json" | jsawk; then
+    msg="Failed to read queue length, no json data received: $json"
+    echo "$msg" >> $logFile
+    sns-publish-coursera --message "$msg" --subject "Coursera: Reading queue length failed"
+    exit 1
+  fi
+
+  queueLength=`echo "$json" | jsawk "return this.queue_length"` || {
+    msg="Failed to get queue length from json: $json"
+    echo "$msg" >> $logFile
+    sns-publish-coursera --message "$msg" --subject "Coursera: Reading queue length failed"
+    exit 1
+  }
+  overallLength=$((overallLength + queueLenght))
+  echo "queue length for $course: $queueLength" >> $logFile
+done
+
+queueLength=$overallLength
+# read number of running machines, compute reslt
+
+numberOfSpotMachines=`python getNumberOfMachinesNamed.py $MASTER_ASG` || {
+  msg="Failed to obtain number of EC2 spot instances: $numberOfSpotMachines"
+  echo "$msg" >> $logFile
+  sns-publish-coursera --message "$msg" --subject "Coursera: Could not read number of spot instances"
+  exit 1
+}
+numberOfBackupMachines=`python getNumberOfMachinesNamed.py $BACKUP_ASG` || {
+  msg="Failed to obtain number of EC2 backup instances: $numberOfBackupMachines"
+  echo "$msg" >> $logFile
+  sns-publish-coursera --message "$msg" --subject "Coursera: Could not read number of backup instances"
+  exit 1
+}
+numberOfMachines=$((($numberOfSpotMachines+$numberOfBackupMachines)))
+echo "number of running machines: $numberOfMachines" >> $logFile
+
+
+
+# set min-size to 0 if queue is empty
+# if [[ $numberOfMachines == 1 && $queueLength == 0 ]]; then
+#   echo "queue is empty, setting min-size to 0" >> $logFile
+#   as-update-auto-scaling-group courseraASG --min-size 0
+# fi
+# set min-size to 1 if there are submissions in the queue
+# if [[ $numberOfMachines == 0 && $queueLength != 0 ]]; then
+#   echo "queue is non-empty, setting min-size to 1" >> $logFile
+#   as-update-auto-scaling-group courseraASG --min-size 1
+# fi
+
+
+# publish metrics, avoiding dvision by 0
+if [[ $numberOfMachines == 0 ]]; then
+  numberOfMachines=1
+fi
+if [[ $workersPerMachine == 0 ]]; then
+  workersPerMachine=1
+fi
+waitingTime=$((($queueLength*$gradingTimeEstimate)/($numberOfMachines*$workersPerMachine)))
+echo "waiting time: $waitingTime" >> $logFile
+mon-put-data --metric-name WaitingTime --namespace coursera --value $waitingTime
+
+current_time=`date +"%Y-%m-%d-%T"`
+echo "$current_time queue= $queueLength machines= $numberOfMachines waiting= $waitingTime" >> "$logFileInline-$gradingTimeEstimate.log"
