@@ -1,0 +1,4 @@
+#!/bin/bash
+source `dirname $0`/as-base.sh
+
+s3fs progfun-coursera $GRADING_HOME/s3data/
