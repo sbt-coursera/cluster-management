@@ -1,18 +1,22 @@
-# Basic Environment
+# Environment from the image file system.
 GRADING_HOME=$HOME
-S3_BUCKET=progfun-coursera
-
 CLUSTER_NAME=`cat $GRADING_HOME/clusterName`
 [[ -z $CLUSTER_NAME ]] && echo "Cluster name must be specified in the file $GRADING_HOME/clusterName." && exit 1
-
-function clusterPrefixed () {
-  echo "$CLUSTER_NAME-$1"
-}
+S3_BUCKET=`cat $GRADING_HOME/s3Bucket`
+[[ -z $S3_BUCKET ]] && echo "S3 bucket must be specified in the file $GRADING_HOME/s3Bucket." && exit 1
 
 s3base="$GRADING_HOME/s3data"
 s3dir="$s3base/$CLUSTER_NAME"
 settingsDir="$s3dir/settings"
 coursesDir="$s3dir/courses"
+
+# Verify the S3 dir presence.
+[[ -e $settingsDir ]] && s3fs $S3_BUCKET $s3base
+[[ -e $settingsDir ]] && echo "The S3 directory is not mounted since $settingsDir does not exist. Exiting script..." && exit 1
+
+function clusterPrefixed () {
+  echo "$CLUSTER_NAME-$1"
+}
 
 # Zones
 ZONES="us-east-1a,us-east-1b,us-east-1c,us-east-1d"
@@ -26,14 +30,14 @@ ASG=$(clusterPrefixed "courseraASG")
 BACKUP_ASG=$(clusterPrefixed "courseraBackupASG")
 
 # Images
-MASTER_IMAGE="ami-a6590ace"
-WORKER_IMAGE="ami-508cdc38"
+MASTER_IMAGE=`cat $settingsDir/masterImage`
+WORKER_IMAGE=`cat $settingsDir/workerImage`
 
 # Scaling Params
-MASTER_TYPE="t1.micro"
-INSTANCE_TYPE="c3.large"
-INSTANCE_TYPE2="m3.large"
-NUMBER_OF_GRADERS="3" # Number of graders should be nr_of_cores + 1
+MASTER_TYPE=`cat $settingsDir/masterType`
+INSTANCE_TYPE=`cat $settingsDir/workerType`
+INSTANCE_TYPE2=`cat $settingsDir/workerType2`
+NUMBER_OF_GRADERS=`cat $settingsDir/workersPerMachine`
 MAX_SIZE=30
 
 # Values depend on how fast are the machines

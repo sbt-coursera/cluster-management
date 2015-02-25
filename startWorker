@@ -1,12 +1,6 @@
 #!/bin/bash
-
 `dirname $0`/updateRepo
 source `dirname $0`/as-base.sh
 
-s3fs $S3_BUCKET $s3base
-
 echo "" > $GRADING_HOME/terminate
-mkdir -p $s3dir/settings
-echo $NUMBER_OF_GRADERS > $s3dir/settings/workersPerMachine
-
 `dirname $0`/startWorkerImpl
