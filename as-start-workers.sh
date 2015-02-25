@@ -1,9 +1,6 @@
 #!/bin/bash -x
 source `dirname $0`/as-base.sh
 
-# Update settings
-echo $NUMBER_OF_GRADERS > $settingsDir/workersPerMachine
-
 as-create-launch-config $LC --image-id $WORKER_IMAGE --instance-type $INSTANCE_TYPE  --key coursera
 as-create-launch-config $BACKUP_LC --image-id $WORKER_IMAGE --instance-type $INSTANCE_TYPE2 --key coursera
 
