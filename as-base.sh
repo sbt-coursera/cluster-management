@@ -11,8 +11,8 @@ settingsDir="$s3dir/settings"
 coursesDir="$s3dir/courses"
 
 # Verify the S3 dir presence.
-[[ -e $settingsDir ]] && s3fs $S3_BUCKET $s3base
-[[ -e $settingsDir ]] && echo "The S3 directory is not mounted since $settingsDir does not exist. Exiting script..." && exit 1
+[[ -e $settingsDir ]] || s3fs $S3_BUCKET $s3base
+[[ -e $settingsDir ]] || {echo "The S3 directory is not mounted since $settingsDir does not exist. Exiting script..."; exit 1;}
 
 function clusterPrefixed () {
   echo "$CLUSTER_NAME-$1"
