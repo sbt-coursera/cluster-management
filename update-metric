@@ -45,7 +45,7 @@ for course in `ls $coursesDir`; do
     sns-publish-coursera --message "$msg" --subject "Coursera: Reading queue length failed"
     exit 1
   }
-  overallLength=$((overallLength + queueLenght))
+  overallLength=$(($overallLength+$queueLength))
   echo "queue length for $course: $queueLength" >> $logFile
 done
 
