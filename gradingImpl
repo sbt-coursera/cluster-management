@@ -52,7 +52,7 @@ fi
 
 uploadLog () {
   if [[ $s3avail == "true" ]]; then
-    cp $1 $logsUploadDir/$hostname
+    cp $1 $logsUploadDir/$hostname && rm $1
   fi
 }
 
