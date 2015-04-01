@@ -1,4 +1,4 @@
 #!/bin/bash -x
-logFileName="grading-$1.log"
+logFileName="$GRADING_HOME/logs/grading-$1.log"
 
 `dirname $0`/gradingImpl $1 2>&1 | tee $logFileName

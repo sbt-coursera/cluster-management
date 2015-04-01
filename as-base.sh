@@ -41,22 +41,24 @@ MASTER_TYPE=`cat $settingsDir/masterType`
 INSTANCE_TYPE=`cat $settingsDir/workerType`
 INSTANCE_TYPE2=`cat $settingsDir/workerType2`
 NUMBER_OF_GRADERS=`cat $settingsDir/workersPerMachine`
+NOTIFICATION_ARN=`cat $settingsDir/notificationARN`
+
 MAX_SIZE=30
 
 # Values depend on how fast are the machines
 UP_ADJ="1"
 DOWN_ADJ="-1"
+# 2 since this scaling group is supposed to save the day
 BACKUP_UP_ADJ="2"
 BACKUP_DOWN_ADJ="-1"
 
-UPPER_UTILIZATION_THRESHOLD="90"
+# do not go above 85 as it happens that the cluster will not scale up althoug utilized
+UPPER_UTILIZATION_THRESHOLD="85"
 LOWER_UTILIZATION_THRESHOLD="70"
 
 UPPER_WAITING_TIME_THERSHOLD="300"
 LOWER_WAITING_TIME_THERSHOLD="50"
-UPPER_WAITING_TIME_THERSHOLD2="600"
-LOWER_WAITING_TIME_THERSHOLD2="300"
 
 # Utils
 # Preventing eventual consistency issues
-SLEEP_TIME=60
+SLEEP_TIME=90
