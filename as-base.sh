@@ -14,7 +14,7 @@ coursesDir="$s3dir/courses"
 [[ -e $settingsDir ]] || s3fs $S3_BUCKET $s3base
 [[ -e $settingsDir ]] || {
   echo "The S3 directory is not mounted since $settingsDir does not exist. Exiting script..."
-  exit 1
+  sns-publish-coursera --message "" --subject "Coursera: Settings dir is not visible."
 }
 
 function clusterPrefixed () {
