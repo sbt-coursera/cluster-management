@@ -2,9 +2,9 @@
 
 This is the repository for managing the cluster infrastructure for the sbt-coursera plugin. We use *EC2* instances to run many instances of the grading scripts in parallel.
 
-* Every EC2 worker machine starts grading automatically after booting (multiple instances of the script on each machine). This machine can be started by starting from the latest version of the coursera-worker image. To find it just search for coursera-worker in the community AMIs in AWS. 
+* Every EC2 worker machine starts grading automatically after booting (multiple instances of the script on each machine). This machine can be started by starting from the latest version of the coursera-worker image. To find it just search for coursera-worker in the community AMIs in AWS.
 * A Master node reads the queue length and computes an estimated time for an new submission to get graded. This data is published every minute to a *CloudWatch metric*. Master can be found by searching for `coursera-master` in the AWS (use the latest version).
-* We use an *AutoScaling group* to scale up or down the EC2 instances based on the estimated waiting time. The script `as-start-master.sh` will create an immortal master, while `as-start-workers.sh` will create the scaling groups. 
+* We use an *AutoScaling group* to scale up or down the EC2 instances based on the estimated waiting time. The script `as-start-master.sh` will create an immortal master, while `as-start-workers.sh` will create the scaling groups.
 * Log files are stored in a *S3 bucket*. This bucket is mounted on startup on all workers. We also store some files with settings on S3 so that the worker configuration can be easily changed.
 * We use a *SNS topic* to publish error notifications, from where the messages get published to the `progfun-coursera-logs@googlegroups.com` group.
 
@@ -59,7 +59,7 @@ Both the server and the workers have a cron job (run `crontab -e` to edit): the 
 There are two scaling rules: scale up 1 machines if WaitingTime > 300s, scale down 1 machine if waiting time < 50s.
 
 The scripts for managing the clster are:
- * `as-base.sh` is sourced to all other scripts and contains all the configuration parameters. All of the params that I usually use for tweaking are now there. If you need to add something feel free to change it in the other scripts. This could also be loaded from a file, but i do not have time to do this currently. If you need some of these params to be moved to the config in s3 please fire an issue or submit a pull request. 
+ * `as-base.sh` is sourced to all other scripts and contains all the configuration parameters. All of the params that I usually use for tweaking are now there. If you need to add something feel free to change it in the other scripts. This could also be loaded from a file, but i do not have time to do this currently. If you need some of these params to be moved to the config in s3 please fire an issue or submit a pull request.
  * `as-kill-workers.sh` delete all the auto-scaling groups and all the instances in them. When you do this make sure that you have an instance outside the scaling group running that can still grade the incoming tasks.
  * `as-start-workers.sh` starts the cluster workers by creating the spot instance and backup scaling groups.
  * `as-start-master.sh` starts a scaling group for master. This is usually done only once in the beginning.
@@ -106,8 +106,9 @@ Each organization can have multiple clusters running and the name of the cluster
   * `masterType`: type of the AWS instance to use for master (e.g., t1.micro). If you change the image the master scaling group needs a restart (`as-restart-master.sh`).
   * `workerType`: type of the AWS instance to use for workers in the main scaling group (e.g., c3.large). If you change the image the worker scaling groups needs a restart (`as-restart-workers.sh`).
   * `workerType2`: type of the backup worker. Should be different than `workerType`. Used for a backup scaling group. If you change the image the worker scaling groups needs a restart (`as-restart-workers.sh`).
+  * `notificationARN`: Amazon Resource Name of the messaging service. If blank no messages will be sent.
 * `courses` contains a folder for each course that the cluster is grading. For example (`parprog` and `progfun`). Furthermore, each course folder contains a file:
     * `apiKey`: required to access coursera API. **Careful**: this setting needs to be changed in multiple locations, see scripts in `heathermiller/progfun`.
     * `courseId`, `queueName` of the coursera class. Again, changes in the progfun repository are required.
-    * `gitUrl` the url pointing to the repo. The username and password can be stored in the URL. 
+    * `gitUrl` the url pointing to the repo. The username and password can be stored in the URL.
     * `gitBranch` the branch used for deployment.
